@@ -1,0 +1,25 @@
+{
+  "workspace": "./data",
+  "host": "127.0.0.1",
+  "port": 1933,
+  "server_api_key": "",
+  "embedding": {
+    "model": "BAAI/bge-small-zh-v1.5",
+    "cache_dir": "./model-cache",
+    "local_files_only": false,
+    "threads": 2,
+    "batch_size": 32,
+    "query_prefix": "为这个句子生成表示以用于检索相关文章："
+  },
+  "llm": {
+    "api_base": "${MODEL_API_BASE}",
+    "model": "${MODEL_NAME}",
+    "api_key": "${MODEL_API_KEY}",
+    "timeout": 60,
+    "retries": 2,
+    "max_input_chars": 12000,
+    "max_tokens": 1600
+  },
+  "chunk_size": 400,
+  "chunk_overlap": 60
+}

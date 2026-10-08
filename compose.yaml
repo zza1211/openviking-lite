@@ -1,0 +1,16 @@
+services:
+  openviking-lite:
+    build: .
+    ports:
+      - "127.0.0.1:1933:1933"
+    volumes:
+      - ./config.local.json:/config/config.local.json:ro
+      - ./data:/config/data
+      - ./model-cache:/config/model-cache
+    environment:
+      MODEL_API_BASE: ${MODEL_API_BASE:?Set MODEL_API_BASE}
+      MODEL_NAME: ${MODEL_NAME:?Set MODEL_NAME}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+      OV_LITE_API_KEY: ${OV_LITE_API_KEY:?Set OV_LITE_API_KEY}
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    restart: unless-stopped

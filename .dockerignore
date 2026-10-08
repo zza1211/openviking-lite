@@ -1,0 +1,8 @@
+.venv*
+data
+model-cache
+config.local.json
+tests
+__pycache__
+dist
+*.egg-info
