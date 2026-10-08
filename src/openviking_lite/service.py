@@ -173,19 +173,24 @@ class Service:
         )
         return {"answer": answer, "sources": sources}
 
-    def create_session(self, user_id: str = "default") -> dict:
+    def create_session(self, user_id: str = "default", external_id: str | None = None) -> dict:
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", user_id):
             raise ValueError("user_id must contain 1–64 ASCII letters, digits, _ or -")
-        session_id = uuid.uuid4().hex
-        self.store.create_session(session_id, user_id)
+        if external_id is not None and (not external_id or len(external_id) > 256):
+            raise ValueError("external_id must contain 1–256 characters")
+        session_id = self.store.create_session(uuid.uuid4().hex, user_id, external_id)
         return {"session_id": session_id, "user_id": user_id}
 
-    def append_message(self, session_id: str, role: str, content: str) -> dict:
+    def append_message(
+        self, session_id: str, role: str, content: str, message_id: str | None = None
+    ) -> dict:
         if role not in {"user", "assistant", "system"}:
             raise ValueError("role must be user, assistant or system")
-        if not content.strip() or len(content) > self.settings.llm.max_input_chars - 100:
-            raise ValueError("Message is empty or exceeds llm.max_input_chars minus 100")
-        return {"seq": self.store.append_message(session_id, role, content)}
+        if not content.strip() or len(content) > 100000:
+            raise ValueError("Message must contain 1–100000 characters")
+        if message_id is not None and (not message_id or len(message_id) > 256):
+            raise ValueError("message_id must contain 1–256 characters")
+        return {"seq": self.store.append_message(session_id, role, content, message_id)}
 
     def commit_session(self, session_id: str) -> dict:
         snapshot = self.store.session(session_id)
@@ -194,14 +199,7 @@ class Service:
             return {"session_id": session_id, "memories": [], "processed_messages": 0}
         # Preserve message boundaries and role labels while batching long conversations.
         batches, current = [], ""
-        for message in messages:
-            block = json.dumps(
-                {"role": message["role"], "content": message["content"]}, ensure_ascii=False
-            )
-            if len(block) > self.settings.llm.max_input_chars:
-                raise ValueError(
-                    "Encoded message exceeds llm.max_input_chars; shorten this message"
-                )
+        for block in self._message_blocks(messages):
             if current and len(current) + len(block) + 1 > self.settings.llm.max_input_chars:
                 batches.append(current)
                 current = ""
@@ -230,3 +228,28 @@ class Service:
         entries = [self._prepare(uri, text, False, "memory") for uri, text in memories.items()]
         uris = self.store.commit_session(snapshot, entries)
         return {"session_id": session_id, "memories": uris, "processed_messages": len(messages)}
+
+    def _message_blocks(self, messages):
+        """Split long/escaped messages only for inference; preserve full text in storage."""
+        budget = self.settings.llm.max_input_chars
+        for message in messages:
+            text = message["content"]
+
+            def encode(value, role=message["role"]):
+                return json.dumps({"role": role, "content": value}, ensure_ascii=False)
+
+            full = encode(text)
+            if len(full) <= budget:
+                yield full
+                continue
+            start = 0
+            while start < len(text):
+                low, high = 1, min(len(text) - start, budget)
+                while low < high:
+                    middle = (low + high + 1) // 2
+                    if len(encode(text[start : start + middle])) <= budget:
+                        low = middle
+                    else:
+                        high = middle - 1
+                yield encode(text[start : start + low])
+                start += low

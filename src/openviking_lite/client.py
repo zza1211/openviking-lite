@@ -49,14 +49,18 @@ class Client:
             "DELETE", "/api/v1/fs", params={"uri": uri, "recursive": str(recursive).lower()}
         )
 
-    def create_session(self, user_id: str = "default"):
-        return self.request("POST", "/api/v1/sessions", json={"user_id": user_id})
+    def create_session(self, user_id: str = "default", *, external_id: str | None = None):
+        return self.request(
+            "POST", "/api/v1/sessions", json={"user_id": user_id, "external_id": external_id}
+        )
 
-    def add_message(self, session_id: str, role: str, content: str):
+    def add_message(
+        self, session_id: str, role: str, content: str, *, message_id: str | None = None
+    ):
         return self.request(
             "POST",
             f"/api/v1/sessions/{session_id}/messages",
-            json={"role": role, "content": content},
+            json={"role": role, "content": content, "message_id": message_id},
         )
 
     def commit_session(self, session_id: str):

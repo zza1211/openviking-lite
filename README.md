@@ -16,6 +16,7 @@
 | 分层读取 | 每份资料的 L0 摘要、L1 概述、L2 原文；长文分块并生成归并摘要 |
 | 检索 | CPU 余弦相似度、URI 子树范围、每份资料去重、可选层级和分数阈值 |
 | 会话记忆 | 会话持久化、增量提交、记忆提取、相同文本去重、失败不推进提交进度 |
+| OpenCode 接入 | 自动记录原始聊天、后台提取记忆、回答前召回，已实测 OpenCode 1.18.30 |
 | 导入 | UTF-8 文本、Markdown、JSON/YAML、代码等；目录保留相对路径 |
 | 多模态 | 不支持图像、音频、视频、扫描件、OCR，也不会调用视觉模型 |
 | 运行依赖 | FastAPI、Uvicorn、HTTPX、NumPy、FastEmbed；无 Torch、Transformers、厂商 SDK |
@@ -27,8 +28,21 @@ FastEmbed 包会安装 ONNX Runtime、tokenizers 等传递依赖（包含 Pillow
 
 本版本保留核心使用流程，**不是原版 SDK/插件的完全兼容实现**。使用下面的 `openviking_lite.Client`
 或 Lite HTTP 接口。不会迁移原版 AGFS/向量库数据；已有资料需要重新导入。
-原版多租户权限、语义记忆合并、Agent 规划检索、任务队列、Git/网页抓取、Web Studio、MCP/插件未纳入本版本。
+原版多租户权限、语义记忆合并、Agent 规划检索、任务队列、Git/网页抓取、Web Studio、MCP/原版插件未纳入本版本。
 `search` 和 `find` 是同一种直接向量检索，不会额外调用规划模型。
+
+## OpenCode 自动记忆
+
+0.2.0 新增独立 OpenCode 适配插件。启动本服务后，在仓库根目录执行：
+
+```bash
+node integrations/opencode/install.mjs --global
+```
+
+安装后配置 `~/.config/opencode/openviking-lite.json` 的 `url`、`api_key`、`user_id`，
+完全重启 OpenCode，即可在普通聊天中自动记录、提取和召回记忆。
+无需手动调用 `create_session` / `commit_session`，也不会额外部署模型。
+详见 [OpenCode 插件安装、配置与验证](integrations/opencode/README.md)。
 
 ## Windows 本地部署
 
@@ -177,6 +191,11 @@ HTTP 服务只接收文本，不读取调用者指定的服务端文件路径。
 需要访问鉴权时设置 `server_api_key`；客户端使用 `X-API-Key` 或 `Authorization: Bearer ...`。
 CLI 可以设置 `OV_LITE_API_KEY`，Python `Client` 使用 `api_key=`。
 
+0.2.0 起，创建会话可选传入 `external_id`，同一个用户和外部会话 ID 返回原有会话。
+写入消息可选传入 `message_id`；相同 ID/内容重试不会重复写入，未提交消息允许更新。
+已提交消息修改返回 409 和 `code: "committed_message_changed"`。
+不传这两个字段时仍按原来的行为创建/追加。已有 SQLite 数据自动增加映射表，无需重建向量索引。
+
 ## 模型缓存、数据与资源
 
 - 数据：`data/openviking-lite.db`；模型缓存：`model-cache/`。
@@ -219,6 +238,7 @@ uv sync --locked --extra test
 uv run pytest
 uv run ruff check src tests examples
 uv run ruff format --check src tests examples
+node --test integrations/opencode/tests/*.test.mjs
 # 下载模型后：真实 CPU 向量 + 实际 HTTP/CLI + 本地模拟文本 API 的整链路测试。
 uv run python tests/smoke_real_model.py --cache-dir model-cache
 ```

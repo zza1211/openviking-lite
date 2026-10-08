@@ -39,11 +39,13 @@ class AskBody(Body):
 
 class SessionBody(Body):
     user_id: str = "default"
+    external_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class MessageBody(Body):
     role: Literal["user", "assistant", "system"]
     content: str = Field(min_length=1, max_length=100000)
+    message_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 def ok(result):
@@ -77,7 +79,7 @@ def create_app(settings: Settings, *, service: Service | None = None) -> FastAPI
 
     app = FastAPI(
         title="OpenViking Lite — Text Memory",
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
         dependencies=[Depends(authorize)],
     )
@@ -94,7 +96,9 @@ def create_app(settings: Settings, *, service: Service | None = None) -> FastAPI
 
     @app.exception_handler(ConflictError)
     async def conflict(request, exc):
-        return JSONResponse({"status": "error", "error": str(exc)}, status_code=409)
+        return JSONResponse(
+            {"status": "error", "error": str(exc), "code": exc.code}, status_code=409
+        )
 
     @app.exception_handler(ModelError)
     async def model_failure(request, exc):
@@ -144,7 +148,7 @@ def create_app(settings: Settings, *, service: Service | None = None) -> FastAPI
 
     @app.post("/api/v1/sessions")
     def session_create(body: SessionBody, svc: Service = service_dependency):
-        return ok(svc.create_session(body.user_id))
+        return ok(svc.create_session(body.user_id, body.external_id))
 
     @app.get("/api/v1/sessions/{session_id}")
     def session_get(session_id: str, svc: Service = service_dependency):
@@ -152,7 +156,7 @@ def create_app(settings: Settings, *, service: Service | None = None) -> FastAPI
 
     @app.post("/api/v1/sessions/{session_id}/messages")
     def message_add(session_id: str, body: MessageBody, svc: Service = service_dependency):
-        return ok(svc.append_message(session_id, body.role, body.content))
+        return ok(svc.append_message(session_id, body.role, body.content, body.message_id))
 
     @app.post("/api/v1/sessions/{session_id}/commit")
     def session_commit(session_id: str, svc: Service = service_dependency):

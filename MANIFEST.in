@@ -1,3 +1,4 @@
 include LICENSE README.md config.example.json Dockerfile compose.yaml .dockerignore uv.lock
 recursive-include examples *.py
 recursive-include tests *.py
+recursive-include integrations *.mjs *.js *.json *.md

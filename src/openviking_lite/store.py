@@ -10,7 +10,11 @@ from .models import normalize_vectors
 
 
 class ConflictError(RuntimeError):
-    pass
+    code = "conflict"
+
+
+class CommittedMessageError(ConflictError):
+    code = "committed_message_changed"
 
 
 def now() -> str:
@@ -74,6 +78,16 @@ class Store:
                 session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
                 seq INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
                 PRIMARY KEY(session_id, seq)
+            );
+            CREATE TABLE IF NOT EXISTS session_links (
+                user_id TEXT NOT NULL, external_id TEXT NOT NULL,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                PRIMARY KEY(user_id, external_id)
+            );
+            CREATE TABLE IF NOT EXISTS message_keys (
+                session_id TEXT NOT NULL, message_id TEXT NOT NULL, seq INTEGER NOT NULL,
+                PRIMARY KEY(session_id, message_id),
+                FOREIGN KEY(session_id, seq) REFERENCES messages(session_id, seq) ON DELETE CASCADE
             );
         """)
         with self.db:
@@ -209,12 +223,24 @@ class Store:
                 item.update(dict(doc))
             return results
 
-    def create_session(self, session_id: str, user_id: str):
+    def create_session(self, session_id: str, user_id: str, external_id: str | None = None) -> str:
         with self._lock, self.db:
+            if external_id is not None:
+                existing = self.db.execute(
+                    "SELECT session_id FROM session_links WHERE user_id=? AND external_id=?",
+                    (user_id, external_id),
+                ).fetchone()
+                if existing:
+                    return existing[0]
             self.db.execute(
                 "INSERT INTO sessions (id, user_id, created_at) VALUES (?, ?, ?)",
                 (session_id, user_id, now()),
             )
+            if external_id is not None:
+                self.db.execute(
+                    "INSERT INTO session_links VALUES (?, ?, ?)", (user_id, external_id, session_id)
+                )
+            return session_id
 
     def session(self, session_id: str) -> dict:
         with self._lock:
@@ -231,15 +257,46 @@ class Store:
             ]
             return result
 
-    def append_message(self, session_id: str, role: str, content: str):
+    def append_message(
+        self, session_id: str, role: str, content: str, message_id: str | None = None
+    ):
         with self._lock, self.db:
-            self.session(session_id)
+            session = self.db.execute(
+                "SELECT committed_seq FROM sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if session is None:
+                raise KeyError(session_id)
+            if message_id is not None:
+                existing = self.db.execute(
+                    """
+                    SELECT m.seq, m.role, m.content FROM messages m
+                    JOIN message_keys k ON k.session_id=m.session_id AND k.seq=m.seq
+                    WHERE k.session_id=? AND k.message_id=?
+                """,
+                    (session_id, message_id),
+                ).fetchone()
+                if existing:
+                    if existing["role"] == role and existing["content"] == content:
+                        return existing["seq"]
+                    if existing["seq"] <= session["committed_seq"]:
+                        raise CommittedMessageError(
+                            "A committed message cannot be changed; use a new message_id"
+                        )
+                    self.db.execute(
+                        "UPDATE messages SET role=?, content=? WHERE session_id=? AND seq=?",
+                        (role, content, session_id, existing["seq"]),
+                    )
+                    return existing["seq"]
             seq = self.db.execute(
                 "SELECT COALESCE(MAX(seq), 0)+1 FROM messages WHERE session_id=?", (session_id,)
             ).fetchone()[0]
             self.db.execute(
                 "INSERT INTO messages VALUES (?, ?, ?, ?)", (session_id, seq, role, content)
             )
+            if message_id is not None:
+                self.db.execute(
+                    "INSERT INTO message_keys VALUES (?, ?, ?)", (session_id, message_id, seq)
+                )
             return seq
 
     def commit_session(self, snapshot: dict, entries: list[tuple]) -> list[str]:
@@ -247,6 +304,13 @@ class Store:
             current = self.session(snapshot["id"])
             if current["committed_seq"] != snapshot["committed_seq"]:
                 raise ConflictError("Session was committed concurrently; retry")
+            original = {m["seq"]: (m["role"], m["content"]) for m in snapshot["messages"]}
+            if any(
+                original.get(m["seq"]) != (m["role"], m["content"])
+                for m in current["messages"]
+                if m["seq"] in original
+            ):
+                raise ConflictError("Session messages changed during memory extraction; retry")
             uris = []
             for doc, chunks, vectors in entries:
                 self._put(doc, chunks, vectors)

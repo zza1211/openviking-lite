@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "url": "http://127.0.0.1:1933",
+  "api_key": "",
+  "user_id": "default",
+  "capture": true,
+  "recall": true,
+  "recall_limit": 6,
+  "preference_limit": 3,
+  "score_threshold": 0.35,
+  "max_context_chars": 4000,
+  "recall_timeout_ms": 3000,
+  "request_timeout_ms": 10000,
+  "commit_timeout_ms": 600000,
+  "commit_debounce_ms": 1000
+}
