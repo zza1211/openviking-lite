@@ -250,7 +250,9 @@ def run(cache_dir: Path, opencode: str):
                             "Automatic extraction missing: "
                             + (temp / "opencode.log").read_text(encoding="utf-8")[-6000:]
                         )
-                    with closing(sqlite3.connect(temp / "lite-data/openviking-lite.db")) as database:
+                    with closing(
+                        sqlite3.connect(temp / "lite-data/openviking-lite.db")
+                    ) as database:
                         stored = database.execute(
                             "SELECT m.role, m.content FROM messages m "
                             "JOIN session_links l ON l.session_id=m.session_id "

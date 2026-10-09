@@ -130,6 +130,22 @@ class Service:
                 for item in children
             )
 
+    def update(
+        self,
+        uri: str,
+        text: str,
+        *,
+        summarize: bool = False,
+        expected_updated_at: str | None = None,
+    ) -> dict:
+        uri = canonical_uri(uri)
+        original = self.store.read(uri)
+        doc, chunks, vectors = self._prepare(uri, text, summarize, original["kind"])
+        self.store.put(
+            doc, chunks, vectors, expected_updated_at=expected_updated_at or original["updated_at"]
+        )
+        return self.store.read(uri)
+
     def find(
         self,
         query: str,

@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0
 import secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import __version__
 from .config import Settings
 from .models import ModelError
 from .service import Service
@@ -29,6 +32,12 @@ class FindBody(Body):
     limit: int = Field(default=10, ge=1, le=100)
     score_threshold: float = Field(default=-1, ge=-1, le=1)
     level: Literal[0, 1, 2] | None = None
+
+
+class EditBody(Body):
+    text: str = Field(min_length=1, max_length=5000000)
+    summarize: bool = False
+    expected_updated_at: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class AskBody(Body):
@@ -79,10 +88,27 @@ def create_app(settings: Settings, *, service: Service | None = None) -> FastAPI
 
     app = FastAPI(
         title="OpenViking Lite — Text Memory",
-        version="0.2.0",
+        version=__version__,
         lifespan=lifespan,
-        dependencies=[Depends(authorize)],
     )
+    api = APIRouter(dependencies=[Depends(authorize)])
+    web = Path(__file__).parent / "web"
+    app.mount("/ui", StaticFiles(directory=web, html=True), name="ui")
+
+    @app.get("/", include_in_schema=False)
+    def web_ui():
+        return FileResponse(web / "index.html")
+
+    @app.middleware("http")
+    async def web_headers(request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        if request.url.path == "/" or request.url.path.startswith("/ui/"):
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; "
+                "img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+            )
+        return response
 
     @app.exception_handler(ValueError)
     async def invalid_argument(request, exc):
@@ -104,62 +130,88 @@ def create_app(settings: Settings, *, service: Service | None = None) -> FastAPI
     async def model_failure(request, exc):
         return JSONResponse({"status": "error", "error": str(exc)}, status_code=502)
 
-    @app.get("/health")
+    @api.get("/health")
     def health():
         return {"status": "ok", "mode": "text-only"}
 
-    @app.get("/api/v1/system/status")
+    @api.get("/api/v1/system/status")
     def status(svc: Service = service_dependency):
         return ok(
             {
                 "mode": "text-only",
+                "version": __version__,
                 "embedding_model": settings.embedding.model,
                 "llm_model": settings.llm.model,
                 **svc.store.stats(),
             }
         )
 
-    @app.post("/api/v1/resources")
+    @api.post("/api/v1/resources")
     def add(body: ResourceBody, svc: Service = service_dependency):
         return ok(svc.add(body.to, body.text, summarize=body.summarize))
 
-    @app.post("/api/v1/search/find")
-    @app.post("/api/v1/search/search")
+    @api.post("/api/v1/search/find")
+    @api.post("/api/v1/search/search")
     def find(body: FindBody, svc: Service = service_dependency):
         return ok(svc.find(**body.model_dump()))
 
-    @app.post("/api/v1/ask")
+    @api.post("/api/v1/ask")
     def ask(body: AskBody, svc: Service = service_dependency):
         return ok(svc.ask(**body.model_dump()))
 
-    @app.get("/api/v1/content/read")
+    @api.get("/api/v1/content/read")
     def read(
         uri: str, level: Annotated[int, Query(ge=0, le=2)] = 2, svc: Service = service_dependency
     ):
         return ok(svc.read(uri, level))
 
-    @app.get("/api/v1/fs/ls")
+    @api.get("/api/v1/content/document")
+    def document(uri: str, svc: Service = service_dependency):
+        return ok(svc.store.read(canonical_uri(uri)))
+
+    @api.patch("/api/v1/content/document")
+    def edit_document(uri: str, body: EditBody, svc: Service = service_dependency):
+        return ok(
+            svc.update(
+                uri,
+                body.text,
+                summarize=body.summarize,
+                expected_updated_at=body.expected_updated_at,
+            )
+        )
+
+    @api.get("/api/v1/fs/ls")
     def ls(uri: str = "viking://", svc: Service = service_dependency):
         return ok(svc.store.ls(canonical_uri(uri, root=True)))
 
-    @app.delete("/api/v1/fs")
+    @api.delete("/api/v1/fs")
     def rm(uri: str, recursive: bool = False, svc: Service = service_dependency):
         return ok({"deleted": svc.store.delete(canonical_uri(uri, root=True), recursive)})
 
-    @app.post("/api/v1/sessions")
+    @api.get("/api/v1/sessions")
+    def sessions(
+        user_id: Annotated[str | None, Query(pattern=r"^[A-Za-z0-9_-]{1,64}$")] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        svc: Service = service_dependency,
+    ):
+        return ok(svc.store.list_sessions(user_id, limit, offset))
+
+    @api.post("/api/v1/sessions")
     def session_create(body: SessionBody, svc: Service = service_dependency):
         return ok(svc.create_session(body.user_id, body.external_id))
 
-    @app.get("/api/v1/sessions/{session_id}")
+    @api.get("/api/v1/sessions/{session_id}")
     def session_get(session_id: str, svc: Service = service_dependency):
         return ok(svc.store.session(session_id))
 
-    @app.post("/api/v1/sessions/{session_id}/messages")
+    @api.post("/api/v1/sessions/{session_id}/messages")
     def message_add(session_id: str, body: MessageBody, svc: Service = service_dependency):
         return ok(svc.append_message(session_id, body.role, body.content, body.message_id))
 
-    @app.post("/api/v1/sessions/{session_id}/commit")
+    @api.post("/api/v1/sessions/{session_id}/commit")
     def session_commit(session_id: str, svc: Service = service_dependency):
         return ok(svc.commit_session(session_id))
 
+    app.include_router(api)
     return app

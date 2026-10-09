@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0
 """Text-only, independently installable OpenViking runtime."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .client import Client
 

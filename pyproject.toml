@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openviking-lite"
-version = "0.2.0"
+version = "0.3.0"
 description = "Local, text-only OpenViking core with CPU embeddings and one chat API"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -30,6 +30,9 @@ ov-lite = "openviking_lite.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+openviking_lite = ["web/*.html", "web/*.css", "web/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

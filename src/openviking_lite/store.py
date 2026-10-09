@@ -141,8 +141,23 @@ class Store:
             ],
         )
 
-    def put(self, document: dict, chunks: list[tuple[int, str]], vectors: np.ndarray):
+    def put(
+        self,
+        document: dict,
+        chunks: list[tuple[int, str]],
+        vectors: np.ndarray,
+        *,
+        expected_updated_at: str | None = None,
+    ):
         with self._lock, self.db:
+            if expected_updated_at is not None:
+                current = self.db.execute(
+                    "SELECT updated_at FROM documents WHERE uri=?", (document["uri"],)
+                ).fetchone()
+                if current is None or current[0] != expected_updated_at:
+                    raise ConflictError(
+                        "Document changed since it was opened; reload before saving"
+                    )
             self._put(document, chunks, vectors)
 
     def read(self, uri: str) -> dict:
@@ -170,10 +185,14 @@ class Store:
                 children[child_uri] = {
                     "uri": child_uri,
                     "is_dir": "/" in suffix,
+                    "is_doc": "/" not in suffix,
                     "abstract": row["abstract"] if "/" not in suffix else "",
                 }
             elif "/" in suffix:
                 children[child_uri]["is_dir"] = True
+            else:
+                children[child_uri]["is_doc"] = True
+                children[child_uri]["abstract"] = row["abstract"]
         return list(children.values())
 
     def delete(self, uri: str, recursive: bool) -> int:
@@ -257,6 +276,27 @@ class Store:
             ]
             return result
 
+    def list_sessions(self, user_id: str | None, limit: int, offset: int) -> dict:
+        clause, args = ("s.user_id=?", (user_id,)) if user_id else ("1=1", ())
+        with self._lock:
+            total = self.db.execute(
+                f"SELECT COUNT(*) FROM sessions s WHERE {clause}", args
+            ).fetchone()[0]
+            rows = self.db.execute(
+                f"""
+                SELECT s.*, l.external_id,
+                    (SELECT COUNT(*) FROM messages m WHERE m.session_id=s.id) AS message_count,
+                    (SELECT COUNT(*) FROM messages m
+                        WHERE m.session_id=s.id AND m.seq>s.committed_seq) AS pending_messages,
+                    (SELECT substr(m.content, 1, 100) FROM messages m
+                        WHERE m.session_id=s.id AND m.role='user' ORDER BY m.seq LIMIT 1) AS preview
+                FROM sessions s LEFT JOIN session_links l ON l.session_id=s.id
+                WHERE {clause} ORDER BY s.created_at DESC, s.id DESC LIMIT ? OFFSET ?
+                """,
+                (*args, limit, offset),
+            ).fetchall()
+            return {"sessions": [dict(row) for row in rows], "total": total}
+
     def append_message(
         self, session_id: str, role: str, content: str, message_id: str | None = None
     ):
@@ -323,7 +363,11 @@ class Store:
 
     def stats(self) -> dict:
         with self._lock:
-            return {
+            result = {
                 name: self.db.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
                 for name in ("documents", "chunks", "sessions")
             }
+            result["memories"] = self.db.execute(
+                "SELECT COUNT(*) FROM documents WHERE kind='memory'"
+            ).fetchone()[0]
+            return result

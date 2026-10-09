@@ -1,0 +1,77 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>OpenViking Lite · 记忆空间</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/ui/app.css">
+  <script type="module" src="/ui/app.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="OpenViking Lite 首页">
+      <span class="brand-mark">v</span><span>OpenViking<span class="brand-lite">LITE / TEXT MEMORY</span></span>
+    </a>
+    <div class="sidebar-label">工作空间</div>
+    <nav aria-label="主导航">
+      <button class="nav-button active" id="nav-files" type="button"><span aria-hidden="true">▦</span>记忆空间</button>
+      <button class="nav-button" id="nav-sessions" type="button"><span aria-hidden="true">◷</span>聊天记录</button>
+    </nav>
+    <div class="sidebar-note"><span class="note-orbit" aria-hidden="true">✦</span><strong>让每段对话留下价值</strong><p>浏览你的知识，整理长期记忆，找回有用的上下文。</p></div>
+    <div class="sidebar-footer"><div class="connection-indicator"><span class="status-dot" id="status-dot"></span><span id="connection-status">连接中…</span></div><a href="/docs" target="_blank" rel="noopener">API 文档 <span aria-hidden="true">↗</span></a><span id="version-label">OpenViking Lite</span></div>
+  </aside>
+
+  <main class="main">
+    <header class="page-header">
+      <div><div class="eyebrow">YOUR MEMORY, IN ONE PLACE</div><h1 id="page-title">记忆空间</h1><p id="page-description">查看、检索和整理你的长期记忆。</p></div>
+      <div class="header-actions"><button class="button" id="refresh-button" type="button">↻ 刷新</button><button class="button" id="connection-button" type="button">连接设置</button></div>
+    </header>
+
+    <section class="stats" aria-label="服务统计">
+      <article class="stat-card"><span class="stat-icon teal" aria-hidden="true">▤</span><div><span class="stat-label">全部内容</span><strong id="stat-documents">—</strong></div><span class="stat-unit">条</span></article>
+      <article class="stat-card"><span class="stat-icon violet" aria-hidden="true">✦</span><div><span class="stat-label">长期记忆</span><strong id="stat-memories">—</strong></div><span class="stat-unit">条</span></article>
+      <article class="stat-card"><span class="stat-icon blue" aria-hidden="true">◷</span><div><span class="stat-label">聊天会话</span><strong id="stat-sessions">—</strong></div><span class="stat-unit">段</span></article>
+      <article class="stat-card"><span class="stat-icon amber" aria-hidden="true">▧</span><div><span class="stat-label">检索索引</span><strong id="stat-chunks">—</strong></div><span class="stat-unit">块</span></article>
+    </section>
+
+    <div id="files-view">
+      <form class="search-bar" id="search-form">
+        <span class="search-icon" aria-hidden="true">⌕</span><label class="sr-only" for="search-query">搜索内容</label><input id="search-query" type="search" maxlength="2000" placeholder="描述你想找的记忆、资料或技能…" autocomplete="off">
+        <label class="sr-only" for="search-scope">搜索范围</label><select id="search-scope"><option value="viking://">全部内容</option><option value="viking://user">用户记忆</option><option value="viking://resources">资料</option><option value="viking://skills">技能</option><option value="current">当前目录</option></select>
+        <button class="button primary" id="search-button" type="submit">搜索</button>
+      </form>
+      <div class="workspace-toolbar"><div class="breadcrumb" id="breadcrumb">用户记忆 / default / memories</div><div><button class="button small" id="clear-search" type="button" hidden>退出搜索</button><button class="button small" id="new-button" type="button">＋ 新建内容</button></div></div>
+
+      <section class="workspace" aria-label="记忆文件浏览器">
+        <aside class="tree-panel"><div class="panel-heading"><h2>目录</h2><span class="muted">VIKING</span></div><div id="directory-tree" role="tree" aria-label="内容目录"></div></aside>
+        <section class="list-panel"><div class="panel-heading"><h2 id="list-title">memories</h2><span class="count" id="list-count">—</span></div><div id="file-list" class="file-list"></div></section>
+        <section class="preview-panel" aria-label="内容预览">
+          <div class="empty-preview" id="preview-empty"><span class="empty-art" aria-hidden="true">✦</span><h2>每条记忆，都有迹可循</h2><p>选择左侧的内容查看详情，<br>或搜索你想找回的上下文。</p><span class="subtle-tag">资料 · 记忆 · 技能</span></div>
+          <div id="document-preview" hidden>
+            <div class="document-heading"><span class="kind-tag" id="document-kind">记忆</span><div class="document-actions"><button class="icon-button" id="edit-button" type="button">编辑</button><button class="icon-button danger" id="delete-button" type="button">删除</button></div></div>
+            <h2 class="document-title" id="document-title"></h2><p class="document-uri" id="document-uri"></p><div class="document-meta" id="document-meta"></div>
+            <div class="content-toolbar"><div class="tabs" role="tablist" aria-label="内容层级"><button class="tab active" id="tab-text" role="tab" aria-selected="true" type="button">原文</button><button class="tab" id="tab-overview" role="tab" aria-selected="false" type="button">概述</button><button class="tab" id="tab-abstract" role="tab" aria-selected="false" type="button">摘要</button></div><button class="icon-button" id="copy-button" type="button">复制</button></div>
+            <pre class="document-content" id="document-content" role="tabpanel"></pre>
+          </div>
+        </section>
+      </section>
+    </div>
+
+    <section id="sessions-view" hidden aria-label="聊天记录">
+      <form class="session-filter" id="session-filter"><label for="user-filter">用户</label><input id="user-filter" maxlength="64" placeholder="全部用户" pattern="[A-Za-z0-9_-]{1,64}"><button class="button" type="submit">筛选</button><span id="session-total" class="muted"></span></form>
+      <div class="session-workspace"><section class="session-list-panel"><div class="panel-heading"><h2>会话列表</h2><span class="muted">最近创建</span></div><div id="session-list"></div><div class="pagination"><button class="button small" id="session-prev" type="button">上一页</button><span id="session-page">1</span><button class="button small" id="session-next" type="button">下一页</button></div></section><section class="session-detail-panel" id="session-detail"><div class="empty-preview"><span class="empty-art" aria-hidden="true">◷</span><h2>找回一段对话</h2><p>选择会话，查看保存的原始聊天<br>以及记忆提取进度。</p></div></section></div>
+    </section>
+    <footer class="main-footer"><span id="model-status">正在读取服务状态…</span><span>本地纯文本记忆 · <span id="sync-time">—</span></span></footer>
+  </main>
+
+  <dialog id="connection-dialog" class="modal connection-modal"><form id="connection-form"><div class="modal-heading"><div><span class="eyebrow">CONNECTION</span><h2>连接记忆服务</h2></div><button class="close-button" type="button" data-close="connection-dialog" aria-label="关闭">×</button></div><p class="modal-description">连接当前页面所在的 Lite 服务。</p><label for="api-key">服务 API Key</label><input id="api-key" type="password" autocomplete="off" placeholder="未开启服务鉴权时留空"><label class="checkbox"><input id="remember-key" type="checkbox" checked>仅在当前标签页记住 Key</label><p class="field-note">使用服务的 server_api_key，与文本模型的 API Key 不同。</p><p class="form-error" id="connection-error" role="alert"></p><div class="modal-footer"><button class="button primary" id="connect-submit" type="submit">连接服务</button></div></form></dialog>
+
+  <dialog id="editor-dialog" class="modal editor-modal"><form id="editor-form"><div class="modal-heading"><div><span class="eyebrow">CONTENT</span><h2 id="editor-title">新建内容</h2></div><button class="close-button" type="button" data-close="editor-dialog" aria-label="关闭">×</button></div><label for="editor-uri">内容路径</label><input id="editor-uri" required placeholder="viking://user/default/memories/preferences/my-note"><label for="editor-text">原文</label><textarea id="editor-text" rows="12" maxlength="1000000" required placeholder="写下一条稳定偏好、事实，或粘贴纯文本资料…"></textarea><label class="checkbox"><input id="editor-summary" type="checkbox">调用文本模型生成摘要和概述</label><p class="field-note">默认使用原文开头作为摘要。保存后自动更新检索索引。</p><p class="form-error" id="editor-error" role="alert"></p><div class="modal-footer"><button class="button" type="button" data-close="editor-dialog">取消</button><button class="button primary" id="save-button" type="submit">保存内容</button></div></form></dialog>
+
+  <dialog id="delete-dialog" class="modal delete-modal"><form id="delete-form"><div class="modal-heading"><h2>删除这条内容？</h2><button class="close-button" type="button" data-close="delete-dialog" aria-label="关闭">×</button></div><p class="modal-description">将删除此条内容及其检索索引。</p><p class="delete-uri" id="delete-uri"></p><p class="form-error" id="delete-error" role="alert"></p><div class="modal-footer"><button class="button" type="button" data-close="delete-dialog">取消</button><button class="button danger-solid" id="confirm-delete" type="submit">确认删除</button></div></form></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

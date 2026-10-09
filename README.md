@@ -17,6 +17,7 @@
 | 检索 | CPU 余弦相似度、URI 子树范围、每份资料去重、可选层级和分数阈值 |
 | 会话记忆 | 会话持久化、增量提交、记忆提取、相同文本去重、失败不推进提交进度 |
 | OpenCode 接入 | 自动记录原始聊天、后台提取记忆、回答前召回，已实测 OpenCode 1.18.30 |
+| Web 界面 | 随服务提供目录浏览、内容搜索/新建/编辑/删除、会话记录与服务状态；零前端依赖 |
 | 导入 | UTF-8 文本、Markdown、JSON/YAML、代码等；目录保留相对路径 |
 | 多模态 | 不支持图像、音频、视频、扫描件、OCR，也不会调用视觉模型 |
 | 运行依赖 | FastAPI、Uvicorn、HTTPX、NumPy、FastEmbed；无 Torch、Transformers、厂商 SDK |
@@ -43,6 +44,31 @@ node integrations/opencode/install.mjs --global
 完全重启 OpenCode，即可在普通聊天中自动记录、提取和召回记忆。
 无需手动调用 `create_session` / `commit_session`，也不会额外部署模型。
 详见 [OpenCode 插件安装、配置与验证](integrations/opencode/README.md)。
+
+## 记忆文件系统 Web UI
+
+0.3.0 新增内置轻量界面。按下面的部署步骤启动服务后，直接访问
+**<http://127.0.0.1:1933/>**，或 `/ui/`。不需要 Node.js、前端构建或额外服务。
+
+- 树状浏览资料、用户记忆和技能，查看原文、概述与摘要。
+- 描述你要找的内容进行语义搜索，可限定用户记忆、资料、技能或当前目录。
+- 新建、编辑和删除单条内容；保存后自动更新向量索引。
+- 查看 OpenCode/应用会话，按用户筛选、分页浏览原始聊天与记忆提取进度。
+- 显示内容、记忆、会话、检索块数量，以及当前模型和服务版本。
+
+若服务设置了 `server_api_key`，在页面的“连接设置”填写同一个 Key。
+页面只连接当前服务；可选择仅在当前标签页的 `sessionStorage` 记住 Key。
+静态页面可直接加载，所有数据和修改接口仍需要鉴权。
+
+编辑默认使用原文开头作为摘要，不调用文本 API；勾选“调用文本模型生成摘要和概述”才会调用。
+编辑时保留内容类型和创建时间，并检查更新时间，避免覆盖后台或其他窗口的新修改。
+删除需要确认，界面只删除单条内容，不递归删除目录；删除后无法在界面撤销，操作前可按下文备份。
+会话记录只读。新产生的记忆或聊天可点击“刷新”查看。
+内容以纯文本显示，不执行记忆、资料或聊天里的 HTML/脚本，不加载外部字体或前端 CDN。
+
+界面预览（示例数据）：
+
+![轻量记忆文件系统界面](docs/images/web-ui.jpg)
 
 ## Windows 本地部署
 
@@ -71,7 +97,8 @@ $env:MODEL_API_KEY = 'your-api-key'
 .\.venv\Scripts\ov-lite.exe serve --config config.local.json
 ```
 
-API 文档：<http://127.0.0.1:1933/docs>。服务启动后模型会在第一次导入/查询时加载。
+Web 界面：<http://127.0.0.1:1933/>；API 文档：<http://127.0.0.1:1933/docs>。
+服务启动后模型会在第一次导入/查询时加载。仅浏览已有目录、内容和聊天不需要调用任何模型。
 `/health` 只确认服务在运行；模型是否可用要用 `check --llm` 验证。
 
 `${MODEL_API_BASE}` 等变量支持在 JSON 字符串中替换；缺少变量会报错。
@@ -180,9 +207,12 @@ with Client('http://127.0.0.1:1933') as ov:
 | POST | `/api/v1/search/find` 或 `/search/search` | `query, target_uri, limit, score_threshold, level` |
 | POST | `/api/v1/ask` | `question, target_uri, limit` |
 | GET | `/api/v1/content/read` | 查询参数 `uri, level` |
+| GET | `/api/v1/content/document` | 查询参数 `uri`；返回原文、摘要、类型与时间，仅接受实际文档 |
+| PATCH | `/api/v1/content/document` | 查询参数 `uri`；JSON `text, summarize=false, expected_updated_at` |
 | GET | `/api/v1/fs/ls` | 查询参数 `uri` |
 | DELETE | `/api/v1/fs` | 查询参数 `uri, recursive` |
 | POST | `/api/v1/sessions` | `{"user_id":"alice"}` |
+| GET | `/api/v1/sessions` | 可选查询参数 `user_id, limit=30, offset=0` |
 | GET | `/api/v1/sessions/{id}` | 无 |
 | POST | `/api/v1/sessions/{id}/messages` | `{"role":"user","content":"内容"}` |
 | POST | `/api/v1/sessions/{id}/commit` | 无 |
